@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Message Hash - Encrypt & Decrypt</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+
+        h1 {
+            color: #4db6ac;
+        }
+
+        input, textarea {
+            width: 90%;
+            max-width: 500px;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: none;
+            background: #2e2e2e;
+            color: white;
+            font-size: 16px;
+        }
+
+        button {
+            background: #4db6ac;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: #3aafa9;
+        }
+
+        #output {
+            margin-top: 20px;
+            font-size: 18px;
+            padding: 10px;
+            width: 90%;
+            max-width: 500px;
+            background: #2e2e2e;
+            border-radius: 5px;
+            word-wrap: break-word;
+        }
+    </style>
+    <script>
+        async function sha512(str) {
+            const buffer = new TextEncoder().encode(str);
+            const hashBuffer = await crypto.subtle.digest("SHA-512", buffer);
+            return Array.from(new Uint8Array(hashBuffer))
+                .map(b => b.toString(16).padStart(2, "0"))
+                .join("");
+        }
+
+        async function h(input) {
+            return BigInt("0x" + await sha512(input));
+        }
+
+        async function step(prev) {
+            return (await h(prev.toString())) ^ prev;
+        }
+
+        async function generateKeyStream(key, length) {
+            let keyStream = "";
+            let prev = await h(key);
+            while (keyStream.length < length) {
+                prev = await step(prev);
+                keyStream += prev.toString(2).padStart(512, "0");
+            }
+            return keyStream.slice(0, length);
+        }
+
+        function textToBinary(text) {
+            return text.split("")
+                .map(char => char.charCodeAt(0).toString(2).padStart(8, "0"))
+                .join("");
+        }
+
+        function binaryToText(binary) {
+            return binary.match(/.{8}/g)
+                .map(byte => String.fromCharCode(parseInt(byte, 2)))
+                .join("");
+        }
+
+        async function encrypt(key, message) {
+            const binMessage = textToBinary(message);
+            const keyStream = await generateKeyStream(key, binMessage.length);
+            const encryptedBinary = (BigInt("0b" + binMessage) ^ BigInt("0b" + keyStream)).toString(2).padStart(binMessage.length, "0");
+            
+            return binMessage.length.toString(16).padStart(4, "0") + BigInt("0b" + encryptedBinary).toString(16);
+        }
+
+        async function decrypt(key, encryptedHex) {
+            const binLength = parseInt(encryptedHex.slice(0, 4), 16);
+            const encryptedBinary = BigInt("0x" + encryptedHex.slice(4)).toString(2).padStart(binLength, "0");
+            const keyStream = await generateKeyStream(key, binLength);
+            const decryptedBinary = (BigInt("0b" + encryptedBinary) ^ BigInt("0b" + keyStream)).toString(2).padStart(binLength, "0");
+
+            return binaryToText(decryptedBinary);
+        }
+
+        async function encryptMessage() {
+            const key = document.getElementById("key").value;
+            const message = document.getElementById("message").value;
+            if (!key || !message) {
+                alert("Please enter both a key and a message.");
+                return;
+            }
+            const encrypted = await encrypt(key, message);
+            document.getElementById("encrypted").value = encrypted;
+            document.getElementById("output").textContent = "Encrypted: " + encrypted;
+        }
+
+        async function decryptMessage() {
+            const key = document.getElementById("key").value;
+            const encrypted = document.getElementById("encrypted").value;
+            if (!key || !encrypted) {
+                alert("Please enter both a key and an encrypted message.");
+                return;
+            }
+            const decrypted = await decrypt(key, encrypted);
+            document.getElementById("output").textContent = "Decrypted: " + decrypted;
+        }
+
+        function copyToClipboard() {
+            const outputText = document.getElementById("output").textContent.split(": ")[1];
+            if (!outputText) {
+                alert("Nothing to copy!");
+                return;
+            }
+            navigator.clipboard.writeText(outputText).then(() => alert("Copied to clipboard!"));
+        }
+    </script>
+</head>
+<body>
+    <h1>Message Hash</h1>
+    <h3>Encrypt & Decrypt Securely</h3>
+
+    <label for="key">Key:</label>
+    <input type="text" id="key" placeholder="Enter a secure key"><br><br>
+
+    <label for="message">Message:</label>
+    <textarea id="message" placeholder="Type your message here..."></textarea><br><br>
+
+    <button onclick="encryptMessage()">Encrypt</button><br><br>
+
+    <label for="encrypted">Encrypted Message:</label>
+    <textarea id="encrypted" placeholder="Encrypted output"></textarea><br><br>
+
+    <button onclick="decryptMessage()">Decrypt</button><br><br>
+
+    <div id="output"></div>
+    <button onclick="copyToClipboard()">Copy</button>
+</body>
+</html>
